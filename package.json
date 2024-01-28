@@ -1,7 +1,7 @@
 {
   "name": "tinkoff-merchant-api-ts",
   "description": "Tinkoff Merchant API",
-  "version": "0.0.2",
+  "version": "0.0.17",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

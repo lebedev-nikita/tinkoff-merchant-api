@@ -5,15 +5,29 @@ function debug(value: string) {
 }
 
 export default class TinkoffMerchantAPI {
-  /**
-   * @param terminalKey Terminal name
-   * @param terminalPassword Password for terminal
-   */
+  get terminalKey() {
+    return this.config.terminalKey;
+  }
+
+  get terminalPassword() {
+    return this.config.terminalPassword;
+  }
+
+  private get debug() {
+    return this.config.debug ?? false;
+  }
+
   constructor(
-    public terminalKey: string,
-    public terminalPassword: string,
+    private config: {
+      terminalKey: string;
+      terminalPassword: string;
+      debug?: boolean;
+    },
   ) {
-    debug(`created for ${this.terminalKey}`);
+    const message = `created TinkoffMerchantApi for terminal with key: ${this.terminalKey}`;
+    if (this.debug) {
+      debug(message);
+    }
   }
 
   /** Url for API */
@@ -55,12 +69,17 @@ export default class TinkoffMerchantAPI {
   }
 
   /** Запрос к API Тинькофф */
-  private requestMethod(methodName: string, params: any) {
-    const methodUrl = `${TinkoffMerchantAPI.apiUrl}${methodName}`;
+  private requestMethod(method: ApiMethod, params: any) {
+    const methodUrl = `${TinkoffMerchantAPI.apiUrl}${method}`;
 
     const methodParams = { ...params };
     methodParams.TerminalKey = this.terminalKey;
     methodParams.Token = this.getToken(methodParams);
+
+    if (this.debug) {
+      debug(method + ":");
+      debug(JSON.stringify(methodParams, null, 2));
+    }
 
     return fetch(methodUrl, {
       method: "POST",
@@ -80,86 +99,21 @@ export default class TinkoffMerchantAPI {
 
     return createHash("sha256").update(str).digest("hex");
   }
-
-  /**
-   * Check if notification request is valid
-   * @param req Express (or express-like) request of notification
-   * @param req.ip Request IP
-   * @param req.body Params of notification request
-   */
-  private checkNotificationRequest(req: {
-    ip: string;
-    body: any;
-  }): { success: false; error: string } | { success: true } {
-    if (req.body.TerminalKey !== this.terminalKey) {
-      return {
-        success: false,
-        error: `Invalid request TerminalKey: ${req.body.TerminalKey}`,
-      };
-    }
-
-    const tokenParams = { ...req.body };
-    delete tokenParams.Token;
-    if (req.body.Token !== this.getToken(tokenParams)) {
-      return {
-        success: false,
-        error: `Invalid request Token`,
-      };
-    }
-
-    return { success: true };
-  }
 }
 
-export type Taxation =
-  | "osn"
-  | "usn_income"
-  | "usn_income_outcome"
-  | "envd"
-  | "esn"
-  | "patent";
-
-export type ItemTax = "none" | "vat0" | "vat10" | "vat20" | "vat110" | "vat120";
-
-export type PaymentMethod =
-  | "full_prepayment"
-  | "prepayment"
-  | "advance"
-  | "full_payment"
-  | "partial_payment"
-  | "credit"
-  | "credit_payment";
-
-export type PaymentObject =
-  | "commodity"
-  | "excise"
-  | "job"
-  | "service"
-  | "gambling_bet"
-  | "gambling_prize"
-  | "lottery"
-  | "lottery_prize"
-  | "intellectual_activity"
-  | "payment"
-  | "agent_commission"
-  | "composite"
-  | "another";
-
-export type FfdVersion = "1.2" | "1.05";
-
-export type Receipt = {
-  "Items": Item[];
-  "Taxation": Taxation;
-  "FfdVersion"?: FfdVersion;
-  "Payments"?: Payments;
-} & ({ "Email": string } | { "Phone": string });
+export type ApiMethod =
+  | "Init"
+  | "GetState"
+  | "CheckOrder"
+  | "Confirm"
+  | "Cancel";
 
 export interface InitParams {
   // "TerminalKey": string;
+  // "Token": string;
   "Amount": number;
   "OrderId": string;
   "Description"?: string;
-  // "Token": string;
 
   /**
    * Идентификатор клиента в системе Мерчанта.
@@ -218,8 +172,8 @@ export interface InitResponse {
   "Amount": number;
   "OrderId": string;
   "Success": boolean;
-  "Status": string;
-  "PaymentId": string;
+  "Status": PaymentStatus;
+  "PaymentId": string; // Здесь точно string, в других местах - не точно
   "ErrorCode": number;
   /** Ссылка на платежную форму (параметр возвращается только для Мерчантов без PCI DSS) */
   "PaymentURL"?: string;
@@ -230,20 +184,20 @@ export interface InitResponse {
 }
 
 export interface GetStateParams {
-  "TerminalKey": string;
+  // "Token": string;
+  // "TerminalKey": string;
   "PaymentId": string;
-  "Token": string;
   /** IP-адрес клиента */
   "IP"?: string;
 }
 
 export interface GetStateResponse {
   "TerminalKey": string;
-  "Amount": string;
+  "Amount": number;
   "OrderId": string;
   "Success": boolean;
-  "Status": "NEW" | "CANCELED" | "PREAUTHORIZING" | "FORMSHOWED";
-  "PaymentId": number;
+  "Status": PaymentStatus;
+  "PaymentId": string;
   "ErrorCode": number;
   /** Краткое описание ошибки */
   "Message"?: string;
@@ -254,9 +208,9 @@ export interface GetStateResponse {
 }
 
 export interface ConfirmParams {
-  "TerminalKey": string;
+  // "TerminalKey": string;
+  // "Token": string;
   "PaymentId": string;
-  "Token": string;
   "IP"?: string;
   "Amount"?: string;
   "Receipt"?: Receipt;
@@ -277,38 +231,11 @@ export interface ConfirmParams {
   "Source": PaymentSource;
 }
 
-export type PaymentRoute = "TCB" | "BNPL";
-export type PaymentSource = "installment" | "BNPL";
-
 export interface ConfirmResponse {
   "TerminalKey": string;
   "OrderId": string;
   "Success": boolean;
-  "Status":
-    | "NEW"
-    | "AUTHORIZING"
-    | "AUTHORIZED"
-    | "AUTH_FAIL"
-    | "CANCELED"
-    | "CHECKING"
-    | "CHECKED"
-    | "COMPLETING"
-    | "COMPLETED"
-    | "CONFIRMING"
-    | "CONFIRMED"
-    | "DEADLINE_EXPIRED"
-    | "FORMSHOWED"
-    | "PARTIAL_REFUNDED"
-    | "PREAUTHORIZING"
-    | "PROCESSING"
-    | "3DS_CHECKING"
-    | "3DS_CHECKED"
-    | "REVERSING"
-    | "REVERSED"
-    | "REFUNDING"
-    | "REFUNDED"
-    | "REJECTED"
-    | "UNKNOWN";
+  "Status": PaymentStatus;
 
   "PaymentId": string;
   "ErrorCode": string;
@@ -319,9 +246,9 @@ export interface ConfirmResponse {
 }
 
 export interface CheckOrderParams {
-  "TerminalKey": string;
+  // "TerminalKey": string;
+  // "Token": string;
   "OrderId": string;
-  "Token": string;
 }
 
 export interface CheckOrderResponse {
@@ -335,9 +262,9 @@ export interface CheckOrderResponse {
 }
 
 export interface CancelParams {
-  "TerminalKey": string;
+  // "TerminalKey": string;
+  // "Token": string;
   "PaymentId": string;
-  "Token": string;
   "IP"?: string;
   "Amount"?: number;
   "Receipt"?: Receipt;
@@ -361,7 +288,7 @@ export interface CancelResponse {
   "TerminalKey": string;
   "OrderId": string;
   "Success": boolean;
-  "Status": string;
+  "Status": PaymentStatus;
   "OriginalAmount": number;
   "NewAmount": number;
   "PaymentId": string;
@@ -372,41 +299,222 @@ export interface CancelResponse {
   "ExternalrequestId"?: string;
 }
 
-// TODO
 export interface PaymentsCheckOrder {}
+
+export type Taxation =
+  | "osn"
+  | "usn_income"
+  | "usn_income_outcome"
+  | "envd"
+  | "esn"
+  | "patent";
+
+export type Tax = "none" | "vat0" | "vat10" | "vat20" | "vat110" | "vat120";
+
+export type PaymentMethod =
+  | "full_prepayment"
+  | "prepayment"
+  | "advance"
+  | "full_payment"
+  | "partial_payment"
+  | "credit"
+  | "credit_payment";
+
+export type PaymentObject =
+  | "commodity"
+  | "excise"
+  | "job"
+  | "service"
+  | "gambling_bet"
+  | "gambling_prize"
+  | "lottery"
+  | "lottery_prize"
+  | "intellectual_activity"
+  | "payment"
+  | "agent_commission"
+  | "composite"
+  | "another";
+
+export type Receipt = Receipt_FFD_105 | Receipt_FFD_12;
+
+export interface Receipt_FFD_105 {
+  "FfdVersion": "1.05";
+}
+
+export interface Receipt_FFD_12 {
+  "FfdVersion": "1.2";
+  "Taxation": Taxation;
+  // <-- I'm here
+  "Items": Item_FFD_12[];
+  "Payments"?: Payments;
+  // email or phone
+  "Email"?: string;
+  "Phone"?: string;
+
+  "ClientInfo"?: ClientInfo;
+  "Customer"?: string;
+  "CustomerInn"?: string;
+  "OperatingCheckProps"?: OperatingСheckProps;
+  "SectoralCheckProps"?: SectoralCheckProps;
+  "AddUserProp"?: AddUserProp;
+  "AdditionalCheckProps"?: object;
+}
+
+export interface Item_FFD_12 {
+  "Name": string;
+  /** Цена в копейках за 1 шт */
+  "Price": number;
+  /**
+   * Количество/вес:
+   * - целая часть не более 5 знаков;
+   * - дробная часть не более 3 знаков для Атол, не более 2 знаков для CloudPayments
+   *
+   * Значение «1», если передан объект markCode // TODO
+   */
+  "Quantity": number;
+  /** Сумма в копейках (Quantity * Price) */
+  "Amount": number;
+  /** Признак способа расчёта */
+  "PaymentMethod": PaymentMethod;
+  /** Признак предмета расчёта */
+  "PaymentObject": PaymentObject;
+  /** Дополнительный реквизит предмета расчета */
+  "UserData"?: string;
+  /** Сумма акциза в рублях с учетом копеек, включенная в стоимость предмета расчета */
+  "Excise"?: number;
+  /** Цифровой код страны происхождения товара в соответствии с Общероссийским классификатором стран мира (3 цифры) */
+  "CountryCode"?: string;
+  /** Номер таможенной декларации (32 цифры максимум) */
+  "DeclarationNumber"?: string;
+  /** Единицы измерения. Передовать в соответствии с ОК 015-94 (МК 002-97) */
+  "MeasurementUnit": MeasurementUnit;
+  /** Режим обработки кода маркировки */
+  "MarkProcessingMode"?: string;
+  "MarkCode"?: MarkCode;
+  "MarkQuantity"?: MarkQuantity;
+
+  "SectoralItemProps"?: SelectoralItemProps[];
+  "Tax": Tax;
+  "AgentData"?: AgentData;
+  "SupplierInfo"?: SupplierInfo;
+}
+
+export interface Payments {
+  /** Вид оплаты "Наличные". Сумма к оплате в копейках не более 14 знаков */
+  "Cash"?: number;
+  /** Вид оплаты "Безналичный" */
+  "Electronic"?: number;
+  /** Вид оплаты "Предварительная оплата (Аванс)" */
+  "AdvancePayment"?: number;
+  /** Вид оплаты "Постоплата (Кредит)" */
+  "Credit"?: number;
+  /** Вид оплаты "Иная форма оплаты" */
+  "Provision"?: number;
+}
+
+export interface MarkCode {
+  /** Тип штрих кода */
+  "MarkCodeType": MarkCodeType;
+  "value": string;
+}
+
+export interface MarkQuantity {
+  "numerator": number;
+  "denominator": number;
+}
+
+export interface SelectoralItemProps {
+  "Number": string;
+  "Date": string;
+  "Value": string;
+  "FederalId": string;
+}
+
+export type OperationName = "bank_paying_agent" | "bank_paying_subagent";
+
+export type PaymentRoute = "TCB" | "BNPL";
+export type PaymentSource = "installment" | "BNPL";
 
 export interface Shop {
   "ShopCode": string;
   "Amount": string;
-  "Name": string;
+  "Name"?: string;
   "Fee"?: string;
 }
 
-// TODO: смутило, что в документации структура объекта Items определена два раза. Разобраться.
+export interface AgentData {
+  "AgentSign"?: AgentSign;
+  "OperationName"?: OperationName;
+  "Phones"?: string[];
+  "ReceiverPhones"?: string[];
+  "TransferPhones"?: string[];
+  "OperatorName"?: string;
+  "OperatorAddress"?: string;
+  "OperatorInn"?: string;
+}
 
-export interface Item {
+export interface SupplierInfo {
+  /** Телефон поставщика, в формате +{Ц} (1-19 символов в каждой строке массива) */
+  "Phones"?: string[];
+  /** Наименование поставщика */
+  "Name"?: string;
+  /** ИНН поставщика, в формате ЦЦЦЦЦЦЦЦЦЦ (10-12 символов) */
+  "Inn"?: string;
+}
+
+export interface ClientInfo {
+  "Birthdate"?: string;
+  "Citizenship"?: string;
+  "DocumentCode"?: string;
+  "DocumentData"?: string;
+  "Address"?: string;
+}
+
+export interface OperatingСheckProps {
   "Name": string;
-  "Price": number;
-  "Quantity": number;
-  "Amount": number;
-  /** Признак способа расчёта. Если значение не передано, по умолчанию в онлайн-кассу передается признак способа расчёта "full_payment" */
-  "PaymentMethod"?: PaymentMethod;
-  /** Признак предмета расчёта.Если значение не передано, по умолчанию в онлайн-кассу отправляется признак предмета расчёта "commodity" */
-  "PaymentObject"?: PaymentObject;
-  "Tax": ItemTax;
-  "Ean13"?: string;
-  "ShopCode"?: string;
-  "AgentData"?: AgentData;
-  "SupplierInfo"?: AgentData;
+  "Value": string;
+  "Timestamp": string;
 }
 
-export interface Payments {
-  "Cash"?: number;
-  "Electronic": number;
-  "AdvancePayment"?: number;
-  "Credit"?: number;
-  "Provision"?: number;
+export interface SectoralCheckProps {
+  "FederalId": string;
+  "Date": string;
+  "Number": string;
+  "Value": string;
 }
+
+export interface AddUserProp {
+  "Name": string;
+  "Value": string;
+}
+
+export interface Items_Params {}
+
+export type PaymentStatus =
+  | "NEW"
+  | "AUTHORIZING"
+  | "AUTHORIZED"
+  | "AUTH_FAIL"
+  | "CANCELED"
+  | "CHECKING"
+  | "CHECKED"
+  | "COMPLETING"
+  | "COMPLETED"
+  | "CONFIRMING"
+  | "CONFIRMED"
+  | "DEADLINE_EXPIRED"
+  | "FORM_SHOWED"
+  | "PARTIAL_REFUNDED"
+  | "PREAUTHORIZING"
+  | "PROCESSING"
+  | "3DS_CHECKING"
+  | "3DS_CHECKED"
+  | "REVERSING"
+  | "REVERSED"
+  | "REFUNDING"
+  | "REFUNDED"
+  | "REJECTED"
+  | "UNKNOWN";
 
 export type AgentSign =
   | "bank_paying_agent"
@@ -417,40 +525,48 @@ export type AgentSign =
   | "commission_agent"
   | "another";
 
-export type OperationName = "bank_paying_agent" | "bank_paying_subagent";
+export type MarkCodeType =
+  | "UNKNOWN"
+  | "EAN8"
+  | "EAN13"
+  | "ITF14"
+  | "GS10"
+  | "GS1M"
+  | "SHORT"
+  | "FUR"
+  | "EGAIS20"
+  | "EGAIS30"
+  | "RAWCODE";
 
-export interface AgentData {
-  "AgentSign"?: AgentSign;
-  "OperationName"?: OperationName;
-  // TODO: обязательно ли это поле?
-  "Phones"?: string[];
-  // TODO: обязательно ли это поле?
-  "RecieverPhones"?: string[];
-  // TODO: обязательно ли это поле?
-  "TransferPhones"?: string[];
-  // TODO: обязательно ли это поле?
-  "OperatorName"?: string;
-  // TODO: обязательно ли это поле?
-  "OperatorAddress"?: string;
-  // TODO: обязательно ли это поле?
-  "OperatorInn"?: string;
-}
+/**
+ * Данные из таблицы:
+ * https://www.consultant.ru/document/cons_doc_LAW_362322/0060b1f1924347c03afbc57a8d4af63888f81c6c/
+ * */
+export const MEASUREMENT_UNIT = {
+  "gram": 10,
+  "kilogram": 11,
+  "ton": 12,
+  "centimeter": 20,
+  "decimeter": 21,
+  "meter": 22,
+  "square_centimeter": 30,
+  "square_decimeter": 31,
+  "square_meter": 32,
+  "millimeter": 40,
+  "liter": 41,
+  "cubic_meter": 42,
+  "kilowatt_per_hour": 50,
+  "gigacalorie": 51,
+  "day": 70,
+  "hour": 71,
+  "minute": 72,
+  "second": 73,
+  "kilobyte": 80,
+  "megabyte": 81,
+  "gigabyte": 82,
+  "terabyte": 83,
+  "other": 255,
+} as const;
 
-export interface SupplierInfo {
-  // TODO: обязательно ли это поле?
-  "Phones"?: string[];
-  // TODO: обязательно ли это поле?
-  "Name"?: string[];
-  // TODO: обязательно ли это поле?
-  "Inn"?: string[];
-}
-
-export interface ClientInfo {}
-
-export interface OperatingСheckProps {}
-
-export interface SectoralCheckProps {}
-
-export interface AddUserProp {}
-
-export interface Items_Params {}
+export type MeasurementUnit =
+  (typeof MEASUREMENT_UNIT)[keyof typeof MEASUREMENT_UNIT];
