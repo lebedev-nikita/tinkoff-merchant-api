@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256 } from "./sha256.ts";
 
 function debug(value: string) {
   console.log(value);
@@ -24,8 +24,8 @@ export default class TinkoffMerchantAPI {
       debug?: boolean;
     },
   ) {
-    const message = `created TinkoffMerchantApi for terminal with key: ${this.terminalKey}`;
     if (this.debug) {
+      const message = `created TinkoffMerchantApi for terminal with key: ${this.terminalKey}`;
       debug(message);
     }
   }
@@ -69,12 +69,12 @@ export default class TinkoffMerchantAPI {
   }
 
   /** Запрос к API Тинькофф */
-  private requestMethod(method: ApiMethod, params: any) {
+  private async requestMethod(method: ApiMethod, params: any) {
     const methodUrl = `${TinkoffMerchantAPI.apiUrl}${method}`;
 
     const methodParams = { ...params };
     methodParams.TerminalKey = this.terminalKey;
-    methodParams.Token = this.getToken(methodParams);
+    methodParams.Token = await this.getToken(methodParams);
 
     if (this.debug) {
       debug(method + ":");
@@ -97,7 +97,7 @@ export default class TinkoffMerchantAPI {
       .filter((value) => typeof value == "string" || typeof value == "number")
       .join("");
 
-    return createHash("sha256").update(str).digest("hex");
+    return sha256(str);
   }
 }
 
