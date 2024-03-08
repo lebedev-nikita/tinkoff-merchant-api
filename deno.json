@@ -1,0 +1,11 @@
+{
+  "name": "@y87cgp/tinkoff-merchant-api",
+  "version": "0.0.1",
+  "exports": "./src/mod.ts",
+
+  "lint": {
+    "rules": {
+      "exclude": ["no-empty-interface", "no-explicit-any"]
+    }
+  }
+}
